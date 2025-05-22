@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Memory Game with Sounds & Difficulty</title>
+<style>
+    body {
+  font-family: 'Segoe UI', sans-serif;
+  text-align: center;
+  padding: 20px;
+  background: linear-gradient(to right, #f9f9f9, #e0f7fa);
+}
+
+h1 {
+  margin-bottom: 10px;
+  font-size: 2em;
+  color: #2c3e50;
+}
+
+.stats {
+  margin-bottom: 15px;
+  font-size: 1.2em;
+  color: #34495e;
+}
+
+#gameBoard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 12px;
+  max-width: 360px;
+  margin: 0 auto 20px;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 15px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.card {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(145deg, #e6e6e6, #ffffff);
+  font-size: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 12px;
+  transition: transform 0.3s ease, background 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.card:hover {
+  transform: scale(1.05);
+}
+
+.card.flipped {
+  background: #f1f8e9;
+  cursor: default;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+}
+
+button, select {
+  padding: 10px 20px;
+  font-size: 1em;
+  cursor: pointer;
+  border: none;
+  background-color: #4caf50;
+  color: white;
+  border-radius: 5px;
+  margin: 5px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+button:hover, select:hover {
+  background-color: #388e3c;
+}
+
+@media (max-width: 420px) {
+  #gameBoard {
+    grid-template-columns: repeat(4, 1fr);
+    max-width: 100%;
+    gap: 10px;
+  }
+
+  .card {
+    height: 60px;
+    font-size: 1.8rem;
+  }
+}
+</style>
+</head>
+<body>
+
+<h1>Memory Game</h1>
+
+<div class="stats">
+  Moves: <span id="moveCounter">0</span> | Time: <span id="timer">0</span> sec
+</div>
+
+<select id="difficultySelect" title="Select Difficulty">
+  <option value="4">Easy (4 pairs)</option>
+  <option value="6" selected>Medium (6 pairs)</option>
+  <option value="8">Hard (8 pairs)</option>
+</select>
+
+<button id="restartBtn">Restart Game</button>
+
+<div id="gameBoard"></div>
+
+<!-- Embedded JSON data -->
+<script id="game-data" type="application/json">
+{
+  "emojis": ["🍎", "🍌", "🍇", "🍓", "🍉", "🥝", "🍒", "🍍"]
+}
+</script>
+
+<script>
+  // Sounds - small beep-like sounds encoded as base64 WAV
+
+  const flipSound = new Audio('data:audio/wav;base64,UklGRrQAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=');
+  const matchSound = new Audio('data:audio/wav;base64,UklGRlIAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=');
+  const mismatchSound = new Audio('data:audio/wav;base64,UklGRpIAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQAAAAA=');
+
+  // Parse JSON data
+  const jsonData = document.getElementById('game-data').textContent;
+  const gameData = JSON.parse(jsonData);
+
+  const allEmojis = gameData.emojis;
+
+  let emojis = [];
+  let shuffled = [];
+  let firstCard = null;
+  let secondCard = null;
+  let lockBoard = false;
+  let matchedCount = 0;
+  let moves = 0;
+  let timerInterval = null;
+  let timeElapsed = 0;
+
+  const board = document.getElementById('gameBoard');
+  const moveCounter = document.getElementById('moveCounter');
+  const timerDisplay = document.getElementById('timer');
+  const restartBtn = document.getElementById('restartBtn');
+  const difficultySelect = document.getElementById('difficultySelect');
+
+  function shuffleArray(array) {
+    return array.sort(() => 0.5 - Math.random());
+  }
+
+  function startTimer() {
+    clearInterval(timerInterval);
+    timeElapsed = 0;
+    timerDisplay.textContent = timeElapsed;
+    timerInterval = setInterval(() => {
+      timeElapsed++;
+      timerDisplay.textContent = timeElapsed;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    clearInterval(timerInterval);
+  }
+
+  function createBoard() {
+    board.innerHTML = '';
+    matchedCount = 0;
+    moves = 0;
+    moveCounter.textContent = moves;
+    stopTimer();
+
+    // Select emojis based on difficulty
+    const pairsCount = parseInt(difficultySelect.value, 10);
+    emojis = allEmojis.slice(0, pairsCount);
+
+    shuffled = shuffleArray([...emojis, ...emojis]);
+
+    shuffled.forEach((emoji, index) => {
+      const card = document.createElement('div');
+      card.classList.add('card');
+      card.dataset.emoji = emoji;
+      card.dataset.index = index;
+      card.textContent = '';
+      card.addEventListener('click', flipCard);
+      board.appendChild(card);
+    });
+  }
+
+  function flipCard() {
+    if (lockBoard || this.classList.contains('flipped')) return;
+
+    this.textContent = this.dataset.emoji;
+    this.classList.add('flipped');
+
+    playSound(flipSound);
+
+    if (!firstCard) {
+      firstCard = this;
+      startTimer();
+    } else {
+      secondCard = this;
+      moves++;
+      moveCounter.textContent = moves;
+      checkMatch();
+    }
+  }
+
+  function checkMatch() {
+    lockBoard = true;
+
+    if (firstCard.dataset.emoji === secondCard.dataset.emoji) {
+      matchedCount += 2;
+      playSound(matchSound);
+      resetTurn();
+
+      if (matchedCount === shuffled.length) {
+        stopTimer();
+        setTimeout(() => alert(`You won in ${moves} moves and ${timeElapsed} seconds!`), 200);
+      }
+    } else {
+      playSound(mismatchSound);
+      setTimeout(() => {
+        firstCard.textContent = '';
+        secondCard.textContent = '';
+        firstCard.classList.remove('flipped');
+        secondCard.classList.remove('flipped');
+        resetTurn();
+      }, 1000);
+    }
+  }
+
+  function resetTurn() {
+    [firstCard, secondCard] = [null, null];
+    lockBoard = false;
+  }
+
+  function playSound(sound) {
+    sound.currentTime = 0;
+    sound.play().catch(() => {});
+  }
+
+  restartBtn.addEventListener('click', () => {
+    createBoard();
+  });
+
+  difficultySelect.addEventListener('change', () => {
+    createBoard();
+  });
+
+  // Initialize game on page load
+  createBoard();
+</script>
+
+</body>
+</html>
